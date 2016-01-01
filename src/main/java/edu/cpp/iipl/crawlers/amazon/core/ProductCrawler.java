@@ -33,9 +33,13 @@ public class ProductCrawler extends Crawler {
             product.setName(title.ownText().trim());
 
         // model number
-        Element model = page.select("b:containsOwn(Item model number:)").first();
+        // bot gets different page source (table) than browser (list) for this part
+        // an alternative solution would be setting the user-agent in the request header
+        // not sure i will do that. just keep it this way for now.
+        Element model = page.select("tr > th:containsOwn(Item model number)").first();
+        model = model.nextElementSibling();
         if (model != null && model.parent() != null) {
-            String modelNum = model.parent().ownText().trim();
+            String modelNum = model.ownText().trim();
             modelNum = modelNum.toUpperCase();
 
             product.setModelNum(modelNum);
