@@ -23,6 +23,7 @@ public class Logger {
     }
 
     public void warn(Object x) {
-        System.err.println(x);
+        if (isVerbose)
+            System.err.println(x);
     }
 }

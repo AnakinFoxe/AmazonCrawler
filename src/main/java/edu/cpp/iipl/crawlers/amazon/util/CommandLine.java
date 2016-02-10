@@ -5,10 +5,9 @@ import edu.cpp.iipl.crawlers.amazon.core.ReviewCrawler;
 import edu.cpp.iipl.crawlers.amazon.model.Product;
 import edu.cpp.iipl.crawlers.amazon.model.Review;
 
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
+import java.io.*;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -20,24 +19,30 @@ public class CommandLine {
     private static void displayHelp() {
         StringBuilder sb = new StringBuilder();
         sb.append("This program sends Amazon Crawler which obtains specified product and its reviews.\n");
-        sb.append("Usage: AmazonCrawler [options] <ASIN> <dir>\n");
+        sb.append("Usage: AmazonCrawler [options] <ASIN/file> <dir>\n");
         sb.append("Options:\n");
         sb.append("  -h        Display help information\n");
         sb.append("  -m        Utilize multi-threading\n");
         sb.append("  -v        Produce verbose output. Normally for debugging.\n");
         sb.append("Input:\n");
         sb.append("  <ASIN>    Amazon ASIN of the product\n");
+        sb.append("  <file>    File containing list of ASINs in \"ASIN::product name\" format\n");
         sb.append("  <dir>     Directory for crawled results\n");
         sb.append("Example: AmazonCrawler -mv B0083FTVB8 A_Random_Folder\n");
         System.out.println(sb.toString());
     }
 
-    // a very basic input check
-    private static boolean inputCheck(String asin, String dir) {
-        return  asin != null && dir != null
-                && asin.charAt(0) != '-' && dir.charAt(0) != '-'        // first char can not be '-' (non-options)
+    // check valid ASIN
+    private static boolean validAsin(String asin) {
+        return asin != null
+                && asin.charAt(0) != '-'                                // first char can not be '-' (non-options)
                 && asin.length() == 10                                  // ASIN length is always 10 characters
                 && asin.replaceAll("[0-9a-zA-Z]", "").length() == 0;    // ASIN contains only digits and number
+    }
+
+    // a very basic input check
+    private static boolean inputCheck(String asin, String dir) {
+        return  validAsin(asin) && dir != null && dir.charAt(0) != '-';
     }
 
     // format product info
@@ -84,55 +89,9 @@ public class CommandLine {
         return sb.toString();
     }
 
-
-    /**
-     * Taking command line input to initiate Amazon Crawler.
-     *
-     * Options:
-     *  -h                  Display help information
-     *  -m                  Utilize multi-threading
-     *  -v                  Produce verbose output. Normally for debugging.
-     *
-     * @param args
-     */
-    public static void main(String[] args) throws IOException {
-        if (args.length == 0) {
-            displayHelp();
-            return;
-        }
-
-        boolean enableVerbose = false;
-        boolean enableMT = false;
-
-        String asin = null;
-        String dir = null;
-
-        // parse input and options
-        for (int i = 0; i < args.length; ++i) {
-            if (args[i].charAt(0) == '-') {
-                for (int j = 1; j < args[i].length(); ++j) {
-                    switch (args[i].charAt(j)) {
-                        case 'm':
-                            enableMT = true;
-                            break;
-                        case 'v':
-                            enableVerbose = true;
-                            break;
-                        case 'h':
-                        default:
-                            displayHelp();
-                            return;
-                    }
-                }
-            } else {
-                asin = args[i++];
-                if (i < args.length)
-                    dir = args[i];
-                else
-                    displayHelp();
-            }
-        }
-
+    // crawl a single product
+    private static void crawlSingleProduct(String asin, String dir, boolean enableVerbose, boolean enableMT)
+            throws IOException {
         // check input
         if (!inputCheck(asin, dir)) {
             System.out.println("The input ASIN (" + asin + ") or dir (" + dir + ") is invalid. Please check it.");
@@ -189,7 +148,140 @@ public class CommandLine {
 
 
         System.out.println("Product and Review information obtained for " + asin);
-        System.out.println("Cost of time: " + (endCrawl - startCrawl) + "ms for crawling, "
-                                            + (endWrite - startWrite) + "ms for writing");
+        System.out.println("Cost of time: " + ((endCrawl - startCrawl) / 1000) + "s for crawling, "
+                + (endWrite - startWrite) + "ms for writing");
+    }
+
+    private static void crawlBatchProducts(String filePath, String dir, boolean enableMT)
+            throws IOException {
+        if (!new File(filePath).exists()) {
+            System.out.println("The input file (" + filePath + ") does not exist. Please check it.");
+        }
+
+        // prepare the task list (products to be crawled)
+        List<String[]> taskList = new ArrayList<>();
+        FileReader fr = new FileReader(filePath);
+        try (BufferedReader br = new BufferedReader(fr)) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String[] task = line.trim().split("::");
+                if (validAsin(task[0]))
+                    taskList.add(task);
+            }
+        }
+        fr.close();
+        System.out.println("Total " + taskList.size() + " products to be crawled");
+
+        // prepare crawler
+        ProductCrawler pc = new ProductCrawler();
+        ReviewCrawler rc = new ReviewCrawler();
+
+        // disable log for batch mode
+        pc.disableVerbose();
+        rc.disableVerbose();
+        System.out.println("Log disabled in batch mode");
+
+
+        // prepare folder and file
+        File dst = new File(dir);
+        if (!dst.exists())
+            dst.mkdir();
+        String savePath = dst.getCanonicalPath() + "/reviews.txt";
+        FileWriter fw = new FileWriter(savePath, true);
+        BufferedWriter bw = new BufferedWriter(fw);
+
+
+        long start = System.currentTimeMillis();
+        for (int i = 0; i < taskList.size(); ++i) {
+            String asin = taskList.get(i)[0];
+            String productName = taskList.get(i)[1];
+
+            System.out.print("Crawling " + (i + 1) + " of " + taskList.size() +
+                                " product: [" + asin + "] " + productName + "...");
+
+            // crawl product and reviews
+            long startCrawl = System.currentTimeMillis();
+            Map<String, Product> productMap = pc.crawlProduct(asin);
+            Map<String, Review> reviewMap;
+            if (enableMT)
+                reviewMap = rc.crawlReviewsMT(productMap.get(asin));
+            else
+                reviewMap = rc.crawlReviews(asin);
+
+            // write to file
+            for (String key : reviewMap.keySet()) {
+                bw.write(reviewMap.get(key).getText() + "\n");
+            }
+            long endCrawl = System.currentTimeMillis();
+
+            System.out.println(" Done (" + ((endCrawl - startCrawl) / 1000) + "s)");
+        }
+        long end = System.currentTimeMillis();
+
+        System.out.println("Done crawling. Total cost of time: " + ((end - start) / 1000) + "s");
+        bw.close();
+        fw.close();
+    }
+
+
+    /**
+     * Taking command line input to initiate Amazon Crawler.
+     *
+     * Options:
+     *  -h                  Display help information
+     *  -m                  Utilize multi-threading
+     *  -v                  Produce verbose output. Normally for debugging.
+     *
+     * @param args
+     */
+    public static void main(String[] args) throws IOException {
+        if (args.length == 0) {
+            displayHelp();
+            return;
+        }
+
+        boolean enableVerbose = false;
+        boolean enableMT = false;
+        boolean batchProcess = false;
+
+        String param1 = null;
+        String dir = null;
+
+        // parse input and options
+        for (int i = 0; i < args.length; ++i) {
+            if (args[i].charAt(0) == '-') {
+                for (int j = 1; j < args[i].length(); ++j) {
+                    switch (args[i].charAt(j)) {
+                        case 'm':
+                            enableMT = true;
+                            break;
+                        case 'v':
+                            enableVerbose = true;
+                            break;
+                        case 'b':
+                            batchProcess = true;
+                            break;
+                        case 'h':
+                        default:
+                            displayHelp();
+                            return;
+                    }
+                }
+            } else {
+                param1 = args[i++];
+                if (i < args.length)
+                    dir = args[i];
+                else
+                    displayHelp();
+            }
+        }
+
+        if (batchProcess) {
+            // in batch process, param1 is a file
+            crawlBatchProducts(param1, dir, enableMT);
+        } else
+            // in single process, param1 is asin
+            crawlSingleProduct(param1, dir, enableVerbose, enableMT);
+
     }
 }
