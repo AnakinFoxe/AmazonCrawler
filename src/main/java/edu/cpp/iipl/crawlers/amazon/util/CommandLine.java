@@ -35,8 +35,8 @@ public class CommandLine {
     // check valid ASIN
     private static boolean validAsin(String asin) {
         return asin != null
-                && asin.charAt(0) != '-'                                // first char can not be '-' (non-options)
                 && asin.length() == 10                                  // ASIN length is always 10 characters
+                && asin.charAt(0) != '-'                                // first char can not be '-' (non-options)
                 && asin.replaceAll("[0-9a-zA-Z]", "").length() == 0;    // ASIN contains only digits and number
     }
 
@@ -156,6 +156,7 @@ public class CommandLine {
             throws IOException {
         if (!new File(filePath).exists()) {
             System.out.println("The input file (" + filePath + ") does not exist. Please check it.");
+            return;
         }
 
         // prepare the task list (products to be crawled)
