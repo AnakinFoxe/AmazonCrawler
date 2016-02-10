@@ -49,20 +49,20 @@ public class CommandLine {
     private static String formatProduct(Product product) {
         StringBuilder sb = new StringBuilder();
 
-        sb.append("Name: ");
-        sb.append(product.getName());
-        sb.append("\nASIN: ");
-        sb.append(product.getAsin());
-        sb.append("\nModel Number: ");
-        sb.append(product.getModelNum());
-        sb.append("\nNumber of Reviews: ");
-        sb.append(product.getNumOfReviewsOnPage());
-        sb.append("\nCrawled Date: ");
-        sb.append(product.getUpdateDate());
-        sb.append("\nHigh Resolution Image URL: ");
-        sb.append(product.getImgUrlHiRes());
-        sb.append("\nMain Image URL: ");
-        sb.append(product.getImgUrlLarge());
+        sb.append("Name: ")
+                .append(product.getName())
+                .append("\nASIN: ")
+                .append(product.getAsin())
+                .append("\nModel Number: ")
+                .append(product.getModelNum())
+                .append("\nNumber of Reviews: ")
+                .append(product.getNumOfReviewsOnPage())
+                .append("\nCrawled Date: ")
+                .append(product.getUpdateDate())
+                .append("\nHigh Resolution Image URL: ")
+                .append(product.getImgUrlHiRes())
+                .append("\nMain Image URL: ")
+                .append(product.getImgUrlLarge());
 
         return sb.toString();
     }
@@ -71,31 +71,31 @@ public class CommandLine {
     private static String formatReview(Review review) {
         StringBuilder sb = new StringBuilder();
 
-        sb.append("Name: ");
-        sb.append(review.getName());
-        sb.append("\nTitle: ");
-        sb.append(review.getTitle());
-        sb.append("\nDate: ");
-        sb.append(review.getDate());
-        sb.append("\nRating: ");
-        sb.append(review.getRate());
-        sb.append("\nHelpful Ratio: ");
-        sb.append(review.getHelpRatio());
-        sb.append("\nPermalink: ");
-        sb.append(review.getPermalink());
-        sb.append("\nText: ");
-        sb.append(review.getText());
+        sb.append("Name: ")
+                .append(review.getName())
+                .append("\nTitle: ")
+                .append(review.getTitle())
+                .append("\nDate: ")
+                .append(review.getDate())
+                .append("\nRating: ")
+                .append(review.getRate())
+                .append("\nHelpful Ratio: ")
+                .append(review.getHelpRatio())
+                .append("\nPermalink: ")
+                .append(review.getPermalink())
+                .append("\nText: ")
+                .append(review.getText());
 
         return sb.toString();
     }
 
     // crawl a single product
-    private static void crawlSingleProduct(String asin, String dir, boolean enableVerbose, boolean enableMT)
+    private static long crawlSingleProduct(String asin, String dir, boolean enableVerbose, boolean enableMT)
             throws IOException {
         // check input
         if (!inputCheck(asin, dir)) {
             System.out.println("The input ASIN (" + asin + ") or dir (" + dir + ") is invalid. Please check it.");
-            return;
+            return 0;
         }
 
         // prepare and send crawlers
@@ -116,7 +116,6 @@ public class CommandLine {
 
         // process and store data
         // 1. create destination folder
-        long startWrite = System.currentTimeMillis();
         File dst = new File(dir);
         if (!dst.exists())
             dst.mkdir();
@@ -144,19 +143,15 @@ public class CommandLine {
                 fw.close();
             }
         }
-        long endWrite = System.currentTimeMillis();
 
-
-        System.out.println("Product and Review information obtained for " + asin);
-        System.out.println("Cost of time: " + ((endCrawl - startCrawl) / 1000) + "s for crawling, "
-                + (endWrite - startWrite) + "ms for writing");
+        return endCrawl - startCrawl;
     }
 
-    private static void crawlBatchProducts(String filePath, String dir, boolean enableMT)
+    private static long crawlBatchProducts(String filePath, String dir, boolean enableMT)
             throws IOException {
         if (!new File(filePath).exists()) {
             System.out.println("The input file (" + filePath + ") does not exist. Please check it.");
-            return;
+            return 0;
         }
 
         // prepare the task list (products to be crawled)
@@ -173,23 +168,8 @@ public class CommandLine {
         fr.close();
         System.out.println("Total " + taskList.size() + " products to be crawled");
 
-        // prepare crawler
-        ProductCrawler pc = new ProductCrawler();
-        ReviewCrawler rc = new ReviewCrawler();
-
         // disable log for batch mode
-        pc.disableVerbose();
-        rc.disableVerbose();
         System.out.println("Log disabled in batch mode");
-
-
-        // prepare folder and file
-        File dst = new File(dir);
-        if (!dst.exists())
-            dst.mkdir();
-        String savePath = dst.getCanonicalPath() + "/reviews.txt";
-        FileWriter fw = new FileWriter(savePath, true);
-        BufferedWriter bw = new BufferedWriter(fw);
 
 
         long start = System.currentTimeMillis();
@@ -201,27 +181,13 @@ public class CommandLine {
                                 " product: [" + asin + "] " + productName + "...");
 
             // crawl product and reviews
-            long startCrawl = System.currentTimeMillis();
-            Map<String, Product> productMap = pc.crawlProduct(asin);
-            Map<String, Review> reviewMap;
-            if (enableMT)
-                reviewMap = rc.crawlReviewsMT(productMap.get(asin));
-            else
-                reviewMap = rc.crawlReviews(asin);
+            long timeCost = crawlSingleProduct(asin, dir, false, enableMT);
 
-            // write to file
-            for (String key : reviewMap.keySet()) {
-                bw.write(reviewMap.get(key).getText() + "\n");
-            }
-            long endCrawl = System.currentTimeMillis();
-
-            System.out.println(" Done (" + ((endCrawl - startCrawl) / 1000) + "s)");
+            System.out.println(" Done (" + (timeCost / 1000) + "s)");
         }
         long end = System.currentTimeMillis();
 
-        System.out.println("Done crawling. Total cost of time: " + ((end - start) / 1000) + "s");
-        bw.close();
-        fw.close();
+        return end - start;
     }
 
 
@@ -277,12 +243,16 @@ public class CommandLine {
             }
         }
 
+        long timeCost;
         if (batchProcess) {
             // in batch process, param1 is a file
-            crawlBatchProducts(param1, dir, enableMT);
-        } else
+            timeCost = crawlBatchProducts(param1, dir, enableMT);
+        } else {
             // in single process, param1 is asin
-            crawlSingleProduct(param1, dir, enableVerbose, enableMT);
+            timeCost = crawlSingleProduct(param1, dir, enableVerbose, enableMT);
+            System.out.println("Product and Review information obtained for " + param1);
+        }
 
+        System.out.println("Done crawling. Total cost of time: " + (timeCost / 1000) + "s");
     }
 }

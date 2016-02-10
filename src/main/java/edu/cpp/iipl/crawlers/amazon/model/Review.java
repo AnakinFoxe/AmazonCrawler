@@ -34,8 +34,6 @@ public class Review {
 
     //@JsonIgnore
     private Integer crawledTimes;   // how many times crawled by ContentCrawler
-    // (set to 0 once status changed to NEEDS_REPLY)
-    private Status status;
 
     //@JsonIgnore
     //@ManyToOne
@@ -44,12 +42,6 @@ public class Review {
     //@JsonIgnore
     //@ManyToOne
     private Brand brand;    // owner of OneToMany
-
-    public enum Status {
-        NEEDS_REPLY,    // no Customer Service replied yet
-        REPLIED,        // Customer Service replied (monitoring for customer replies)
-        OUTDATED        // too long since monitor started
-    }
 
     public Review() {
     }
@@ -132,14 +124,6 @@ public class Review {
 
     public void setCrawledTimes(Integer crawledTimes) {
         this.crawledTimes = crawledTimes;
-    }
-
-    public Status getStatus() {
-        return status;
-    }
-
-    public void setStatus(Status status) {
-        this.status = status;
     }
 
     public Product getProduct() {
